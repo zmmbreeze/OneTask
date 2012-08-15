@@ -5,6 +5,31 @@
   <title>One task for each browser</title>
 </head>
 <body>
-  
+  <p>IsServer: <span id="isServer"></span></p>
+  <p>Data: Time is <span id="time"></span>.</p>
+  <script src="JSON2.js"></script>
+  <script src="OneTask.js"></script>
+  <script>
+    var isServer = document.getElementById('isServer'),
+        time = document.getElementById('time'),
+        flag = false,
+        task = new OneTask(
+            'Timer',
+            function(syncReturn) {
+                flag = true;
+                isServer.innerHTML = 'true';
+                console.log('alive');
+                syncReturn(new Date().toString());
+            },
+            {interval: 1000}
+        );
+    task.onChangeCallBack(function(data) {
+        if (!flag) {
+            isServer.innerHTML = 'false';
+        }
+        flag = false;
+        time.innerHTML = data;
+    }).start();
+  </script>
 </body>
 </html>

@@ -11,7 +11,7 @@
  * @author mzhou
  * @eg  var t =  new OneTask(
  *                  'Name',
- *                  function( syncReturn, n1, n2, n3 ) {
+ *                  function(syncReturn, n1, n2, n3) {
  *                      n1 === 1;
  *                      n2 === 2;
  *                      n3 === 3;
@@ -30,12 +30,12 @@
  *      t.start();
  *      t.stop();
  *      // 注册定时回调，此函数会在当前页面的任务运行而定时运行
- *      t.onCallBack(function( data ) {
+ *      t.onCallBack(function(data) {
  *          this === t;
  *          data.m === 11;
  *      });
  *      // 注册任务返回数据更新时候的回调函数，此函数不会随着任务结束而定时运行
- *      t.onChangeCallBack(function( data ) {
+ *      t.onChangeCallBack(function(data) {
  *          this === t;
  *          data.m === 11;
  *      });
@@ -46,15 +46,132 @@
  * @log 第一版实现
  */
 /*jshint undef:true, browser:true, noarg:true, curly:true, regexp:true, newcap:true, trailing:false, noempty:true, regexp:false, strict:true, evil:true, funcscope:true, iterator:true, loopfunc:true, multistr:true, boss:true, eqnull:true, eqeqeq:false, undef:true */
-/*global G:false, $:false */
+/*global unescape:false, escape:false */
 
-//@import "store.js";
-//@import "JSON2.js";
-//@import "store.js";
-//@import "Event.js";
-G.def('OneTask', ['store', 'JSON2', 'cookies', 'Event'], function(store, JSON2, cookies, Event) {
+var OneTask = (function() {
     'use strict';
-    var pageId = location.pathname + '?' + new Date().getTime() + Math.random(),
+    var store = (function() {
+            var isSupport = 'localStorage' in window,
+                api = {
+                    set: function(){},
+                    get: function(){},
+                    remove: function() {},
+                    clear: function() {},
+                    isSupport: false
+                };
+            if (isSupport) {
+                var lc = window.localStorage;
+                /**
+                 * 构建onSorage函数
+                 * @param {string} key 键值
+                 * @param {function} callback 回调函数
+                 */
+                var createOnStorage = function (key, callback) {
+                    var oldValue = lc[key];
+                    return function(e) {
+                        // setTimeout: bugfix for IE
+                        setTimeout(function() {
+                            e = e || window.storageEvent;
+
+                            var changedKey = e.key,
+                                newValue = e.newValue;
+                            // IE 不支持key、newValue
+                            if(!changedKey) {
+                                var nv = lc[key];
+                                if(nv != oldValue) { // 通过值是否相等来判断
+                                    changedKey = key;
+                                    newValue = nv;
+                                }
+                            }
+
+                            if(changedKey == key) {
+                                if (callback) {
+                                    callback(
+                                        newValue == null ? null : JSON.parse(newValue)
+                                    ); // 解析
+                                }
+                                oldValue = newValue;    // 更新值
+                            }
+                        }, 0);
+                    };
+                };
+                api.set = function(key, value) {
+                    lc.setItem(key, JSON.stringify(value));
+                };
+                api.get = function(key) {
+                    var i = lc.getItem(key);
+                    return i == null ? null : JSON.parse(i);
+                };
+                api.remove = function(key) {
+                    lc.removeItem(key);
+                };
+                api.clear = function() {
+                    lc.clear();
+                };
+                // NOTE: IE在自己修改数据的时候也会收到消息
+                api.onStorage = function(key, callback) {
+                    if(window.addEventListener) {
+                        window.addEventListener('storage', createOnStorage(key, callback), false);
+                    } else{
+                        // IE 在document上
+                        document.attachEvent('storage', createOnStorage(key, callback));
+                    }
+                };
+                api.isSupport = true;
+            }
+            return api;
+        })(),
+        cookies = {
+            /**
+             * 获取cookies中key为name的值
+             * @param {string} name key值
+             * @return {string} 返回对应值，如果没有则返回''
+             */
+            get: function(name) {
+                if (document.cookie.length > 0) {
+                    var e, s = document.cookie.indexOf(name + '=');
+                    if (s != -1) {
+                        s = s + name.length + 1;
+                        e = document.cookie.indexOf(';', s);
+                        if (e == -1) {
+                            e = document.cookie.length;
+                        }
+                        return unescape(document.cookie.substring(s, e));
+                    }
+                }
+                return '';
+            },
+            /**
+             * 设置cookies的值
+             * @param {string} name key值
+             * @param {string} val 值
+             * @param {object} expired 过期时间的date对象
+             * @param {string} path 路径对象
+             * @param {object} 对象本身
+             */
+            set: function(name, val, expired, path) {
+                document.cookie = name + '=' + escape(val) + ((expired == null) ? '' : ';expires=' + expired.toGMTString()) + ';path=' + (path || '/');
+                return this;
+            },
+            /**
+             * 删除cookies
+             * @param {string} name
+             * @param {string} path
+             */
+            remove: function(name, path) {
+                var exp = new Date();
+                exp.setTime(exp.getTime() - 1); // 设置过期时间
+                var val = this.get(name);
+                if (val != null) {
+                    document.cookie = name + "=" + val + ";expires=" + exp.toGMTString() + ';path=' + (path || '/');
+                }
+            }
+        },
+        ArrayProto = Array.prototype,
+        ObjProto = Object.prototype,
+        slice = ArrayProto.slice,
+        nativeFilter = ArrayProto.filter,
+        pageId = location.pathname + '?' + new Date().getTime() + Math.random(),
         set = store.isSupport ? store.set : function(key, value) {
             cookies.set(key, JSON.stringify(value));
         },
@@ -64,6 +181,45 @@ G.def('OneTask', ['store', 'JSON2', 'cookies', 'Event'], function(store, JSON2, 
         },
         remove = store.isSupport ? store.remove : function(key) {
             cookies.remove(key);
+        },
+        each = function(array, iterator, context) {
+            var value;
+            if (array == null) {
+                return;
+            }
+
+            if (ArrayProto.forEach && array.forEach === ArrayProto.forEach) {
+                array.forEach(iterator, context);
+            } else if (typeof array.length === 'number') {
+                for (var i = 0, l = array.length; i < l; i++) {
+                    if (i in array) {
+                        iterator.call(context, array[i], i, array);
+                    }
+                }
+            } else {
+                for (var key in array) {
+                    if (ObjProto.hasOwnProperty.call(array, key)) {
+                        iterator.call(context, array[key], key, array);
+                    }
+                }
+            }
+        },
+        filter = function(array, iterator, context) {
+            var results = [];
+            if (array == null) {
+                return;
+            }
+
+            if (nativeFilter && array.filter === nativeFilter) {
+                return array.filter(iterator, context);
+            } else {
+                each(array, function(value, index, list) {
+                    if (iterator.call(context, value, index, list)) {
+                        results.push(value);
+                    }
+                });
+                return results;
+            }
         };
 
     /**
@@ -103,7 +259,6 @@ G.def('OneTask', ['store', 'JSON2', 'cookies', 'Event'], function(store, JSON2, 
             self.jobRunInterval = setTimeout(run, self.intervalTime);
         };
     }
-    Event.extend(Task);
 
     /**
      * 只有server会执行任务，其他页面上的callback会在run时得到任务结果
@@ -158,7 +313,7 @@ G.def('OneTask', ['store', 'JSON2', 'cookies', 'Event'], function(store, JSON2, 
         self.switchToServer();
 
         // 支持且未初始化时，绑定onStorage事件
-        if (store.isSupport && !self.inited) {
+        /*if (store.isSupport && !self.inited) {
             // 获取最新消息并存储
             store.onStorage(self.jobMsgKey, function(msg) {
                 if (self.isRunning && self.jobMsg !== msg) {
@@ -166,14 +321,14 @@ G.def('OneTask', ['store', 'JSON2', 'cookies', 'Event'], function(store, JSON2, 
                     self.fire('changeCallBack', JSON.parse(msg));
                 }
             });
-        }
+        }*/
         // 定时检查server是否宕机，以及cookies是否更新
         self.serverCheckInterval = setInterval(function() {
             self.check();
             // document.title = ''
             //    + (self.useCookie ? '(C)' : '(S)')
             //    + (self.isServer ? 'Server' : 'Client')
-            //    + JSON.stringify( self.jobMsg )
+            //    + JSON.stringify(self.jobMsg)
             //    + new Date().getSeconds();
             if (self.isServer) {
                 return;
@@ -186,7 +341,7 @@ G.def('OneTask', ['store', 'JSON2', 'cookies', 'Event'], function(store, JSON2, 
                 self.switchToServer();
             }
 
-            if (!store.isSupport && self.isRunning) {
+            if (/*!store.isSupport &&*/ self.isRunning) {
                 // 获取最新消息并存储
                 var msg = get(self.jobMsgKey);
                 if (self.jobMsg !== msg) {
@@ -306,5 +461,72 @@ G.def('OneTask', ['store', 'JSON2', 'cookies', 'Event'], function(store, JSON2, 
         return this;
     };
 
+    /**
+     * 注册事件
+     * @param {string} name 事件名
+     * @param {function} callback 事件的回调函数
+     * @param {object} context 【可选】回调函数的this值
+     * @param {boolean} once 【可选】是否只执行一次
+     * @return {object} this
+     */
+    Task.prototype.on = function(name, callback, context, once) {
+        this.eventQueue = this.eventQueue || {};
+        this.eventQueue[name] = this.eventQueue[name] || [];
+        this.eventQueue[name].push({
+            callback: callback,
+            context: context,
+            once: once
+        });
+        return this;
+    };
+
+    /**
+     * 取消注册事件
+     * @param {string} name
+     * @param {function} callback 【可选】指定要取消的回调函数
+     * @return {object} this
+     */
+    Task.prototype.off = function(name, callback) {
+        this.eventQueue = this.eventQueue || {};
+        if (this.eventQueue[name] == null) {
+            return;
+        }
+        if (callback) {
+            this.eventQueue[name] = filter(this.eventQueue[name], function(value, index) {
+                return value.callback !== callback;
+            });
+            if (this.eventQueue[name].length === 0) {
+                delete this.eventQueue[name];
+            }
+        } else {
+            delete this.eventQueue[name];
+        }
+        return this;
+    };
+
+    /**
+     * 激活事件
+     * @param {string} name
+     * @param {object} data 传递给事件回调函数的参数值
+     * @return {object} this
+     */
+    Task.prototype.fire = function(name, data) {
+        this.eventQueue = this.eventQueue || {};
+        var q = this.eventQueue[name],
+            r = true;
+        if (q) {
+            var arg = slice.call(arguments, 1);
+            each(q, function(value) {
+                if (value.callback.apply(value.context, arg) === false) {
+                    r = false;
+                }
+                if (value.once) {
+                    this.off(name, value.callback);
+                }
+            }, this);
+        }
+        return r;
+    };
+
     return Task;
-});
+})();

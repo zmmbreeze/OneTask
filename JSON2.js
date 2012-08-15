@@ -160,7 +160,7 @@
 // methods in a closure to avoid creating global variables.
 
 
-G.def('JSON2', function () {
+(function () {
     'use strict';
 
     if ( !window.JSON ) {
@@ -484,4 +484,4 @@ G.def('JSON2', function () {
             throw new SyntaxError('JSON.parse');
         };
     }
-}());
+})();
