@@ -31,17 +31,20 @@
     <!-- MAIN CONTENT -->
     <div id="main_content_wrap" class="outer">
       <section id="main_content" class="inner">
-        <h1>One task for each browser</h1>
-
-<p>OneTask is a simple javascript library to make sure a timing task only execute in one page for each browser.</p>
-
-<h2>Example</h2>
-
-<p>Check out the index.html</p>
-
-<h2>API</h2>
-
-<pre><code>var t =  new OneTask(
+  <dd>
+    <dt>Introduction: </dt>
+    <dl>
+    <p>OneTask is a simple javascript library to make sure a timing task only execute in one page for each browser.</p>
+    <p>require: <a href="https://github.com/douglascrockford/JSON-js/">JSON2</a></p>
+    </dd>
+    <dt>Example：</dt>
+    <dd>
+      <p>Open this page in another tab. <a href="." target="_blank">Click here</a>.</p>
+      <p><span id="isServer"></span></p>
+      <p>Server time is <span id="time"></span>.</p>
+    </dd>
+    <dt>API: </dt>
+    <dd><pre>var t =  new OneTask(
             'Name',
             function(syncReturn, n1, n2, n3) {
                 // only server page run this function(Task)
@@ -79,9 +82,33 @@ t.onChangeCallBack(function(data) {
   data.m === 11;
 });
 
-NOTE: if the result of task is null, it means task is not ready. It's not a right result, don't use it;
-</code></pre>
-      </section>
+NOTE: if the result of task is null, it means task is not ready. It's not a right result, don't use it;</pre>
+    </dd>
+  </dl>
+  <script src="javascripts/JSON2.js"></script>
+  <script src="javascripts/OneTask.js"></script>
+  <script>
+    var isServer = document.getElementById('isServer'),
+        time = document.getElementById('time'),
+        flag = false,
+        task = new OneTask(
+            'Timer',
+            function(syncReturn) {
+                flag = true;
+                isServer.innerHTML = 'I am server page.';
+                console.log('alive');
+                syncReturn(new Date().toString());
+            },
+            {interval: 1000}
+        );
+    task.onChangeCallBack(function(data) {
+        if (!flag) {
+            isServer.innerHTML = 'I am client page.';
+        }
+        flag = false;
+        time.innerHTML = data;
+    }).start();
+  </script>      </section>
     </div>
 
     <!-- FOOTER  -->
