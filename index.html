@@ -5,8 +5,61 @@
   <title>One task for each browser</title>
 </head>
 <body>
-  <p>IsServer: <span id="isServer"></span></p>
-  <p>Data: Time is <span id="time"></span>.</p>
+  <h1>One task for each browser</h1>
+  <dd>
+    <dt>Introduction: </dt>
+    <dl>
+    <p>OneTask is a simple javascript libary to make sure a timing task only execute in one page for each browser.</p>
+    <p>require: <a href="https://github.com/douglascrockford/JSON-js/">JSON2</a></p>
+    </dd>
+    <dt>Example：</dt>
+    <dd>
+      <p>Open this page in another tab. <a href="." target="_blank">Click here</a>.</p>
+      <p><span id="isServer"></span></p>
+      <p>Server time is <span id="time"></span>.</p>
+    </dd>
+    <dt>API: </dt>
+    <dd><pre>var t =  new OneTask(
+            'Name',
+            function(syncReturn, n1, n2, n3) {
+                // only server page run this function(Task)
+                n1 === 1;
+                n2 === 2;
+                n3 === 3;
+                // syncReturn: return the result of task
+                // result will be serialize to json string
+                syncReturn({
+                  'm':'11'
+                });
+            },
+            {
+                interval: 30000,        // interval of task
+                serverTimeout: 1000,    // timeout of server
+                params: [1,2,3]         // task params
+            }
+        );
+// cancel the task, and can't start again
+t.cancel();
+// start the task
+t.start();
+// temporarily stop the task
+t.stop();
+// regist callback，which runs after the task
+// parameter of callback is the result of task
+t.onCallBack(function(data) {
+  this === t;
+  data.m === 11;
+});
+// regist callback，which runs when the result change
+// parameter of callback is the result of task
+t.onChangeCallBack(function(data) {
+  this === t;
+  data.m === 11;
+});
+
+NOTE: if the result of task is null, it means task is not ready. It's not a right result, don't use it;</pre>
+    </dd>
+  </dl>
   <script src="JSON2.js"></script>
   <script src="OneTask.js"></script>
   <script>
@@ -17,7 +70,7 @@
             'Timer',
             function(syncReturn) {
                 flag = true;
-                isServer.innerHTML = 'true';
+                isServer.innerHTML = 'I am server page.';
                 console.log('alive');
                 syncReturn(new Date().toString());
             },
@@ -25,7 +78,7 @@
         );
     task.onChangeCallBack(function(data) {
         if (!flag) {
-            isServer.innerHTML = 'false';
+            isServer.innerHTML = 'I am client page.';
         }
         flag = false;
         time.innerHTML = data;

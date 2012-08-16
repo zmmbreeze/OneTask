@@ -1,6 +1,7 @@
 /**
  * OneTask
  * Only one task for each browser~
+ * OneTask is a simple javascript libary to make sure a timing task only execute in one page for each browser.
  *
  * @author mzhou
  * @eg  var t =  new OneTask(
