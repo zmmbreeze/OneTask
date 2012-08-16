@@ -1,49 +1,50 @@
 /**
- * 用于确保同一段代码在本地同域浏览器窗口之间，只有一个会执行任务，并且同步结果给其他窗口。
- * NOTE：只能尽量保证，因为不确定JS是否并行
- * NOTE: IE6、7，采用cookies传输信息，所以不能传输大批量信息
- * 实现原理：采用抢占式设计。后面加载的页面会抢占成为server。
- *           初始化结束后，不再抢占，只有server remove之后才会结束。
- *           server定时更新servertime，并共享给其他页面
- *           其他页面定时检查server状态和时间，如果server remove或关闭页面，则开始抢占
- *           第一个抢占成功的成为server。
+ * OneTask
+ * Only one task for each browser~
  *
  * @author mzhou
  * @eg  var t =  new OneTask(
  *                  'Name',
  *                  function(syncReturn, n1, n2, n3) {
+ *                      // only server page run this function(Task)
  *                      n1 === 1;
  *                      n2 === 2;
  *                      n3 === 3;
- *                      // 多个页面中只server会执行此函数
- *                      // syncReturn 将结果返回给回调函数
+ *                      // syncReturn: return the result of task
+ *                      // result will be serialize to json string
  *                      syncReturn({
  *                          'm':'11'
  *                       });
  *                  },
  *                  {
- *                      interval: 30000,        // 任务的运行间隔时间
- *                      serverTimeout: 1000,    // 服务器页面不活动后多久会认为它已经关闭
- *                      params: [1,2,3]         // 任务的参数
+ *                      interval: 30000,        // interval of task
+ *                      serverTimeout: 1000,    // timeout of server
+ *                      params: [1,2,3]         // task params
  *                  }
  *               );
+ *      // cancel the task, and can't start again
+ *      t.cancel();
+ *      // start the task
  *      t.start();
+ *      // temporarily stop the task
  *      t.stop();
- *      // 注册定时回调，此函数会在当前页面的任务运行而定时运行
+ *      // regist callback，which runs after the task
+ *      // parameter of callback is the result of task
  *      t.onCallBack(function(data) {
  *          this === t;
  *          data.m === 11;
  *      });
- *      // 注册任务返回数据更新时候的回调函数，此函数不会随着任务结束而定时运行
+ *      // regist callback，which runs when the result change
+ *      // parameter of callback is the result of task
  *      t.onChangeCallBack(function(data) {
  *          this === t;
  *          data.m === 11;
  *      });
- *      NOTE: 上面两个任务执行结果的回调函数，输入为任务的执行结果
- *            this为当前任务对象
- *            返回结果如果是null，则是处于切换阶段，不能将null作为正常结果处理
  *
- * @log 第一版实现
+ *      NOTE: if the result of task is null, it means task is not ready. It's not a right result, don't use it;
+ *
+ * @log 0.1 inited
+ *
  */
 
 /*jshint undef:true, browser:true, noarg:true, curly:true, regexp:true, newcap:true, trailing:false, noempty:true, regexp:false, strict:true, evil:true, funcscope:true, iterator:true, loopfunc:true, multistr:true, boss:true, eqnull:true, eqeqeq:false, undef:true */
@@ -63,9 +64,9 @@ var OneTask = (function() {
             if (isSupport) {
                 var lc = window.localStorage;
                 /**
-                 * 构建onSorage函数
-                 * @param {string} key 键值
-                 * @param {function} callback 回调函数
+                 * create onSorage callback
+                 * @param {string} key
+                 * @param {function} callback
                  */
                 var createOnStorage = function (key, callback) {
                     var oldValue = lc[key];
@@ -76,10 +77,10 @@ var OneTask = (function() {
 
                             var changedKey = e.key,
                                 newValue = e.newValue;
-                            // IE 不支持key、newValue
+                            // IE not support key and newValue
                             if(!changedKey) {
                                 var nv = lc[key];
-                                if(nv != oldValue) { // 通过值是否相等来判断
+                                if(nv != oldValue) { // if changed
                                     changedKey = key;
                                     newValue = nv;
                                 }
@@ -89,9 +90,9 @@ var OneTask = (function() {
                                 if (callback) {
                                     callback(
                                         newValue == null ? null : JSON.parse(newValue)
-                                    ); // 解析
+                                    );
                                 }
-                                oldValue = newValue;    // 更新值
+                                oldValue = newValue;    // update oldValue
                             }
                         }, 0);
                     };
@@ -109,12 +110,11 @@ var OneTask = (function() {
                 api.clear = function() {
                     lc.clear();
                 };
-                // NOTE: IE在自己修改数据的时候也会收到消息
+                // NOTE: IE will trigger the event, when modify the data itself
                 api.onStorage = function(key, callback) {
                     if(window.addEventListener) {
                         window.addEventListener('storage', createOnStorage(key, callback), false);
                     } else{
-                        // IE 在document上
                         document.attachEvent('storage', createOnStorage(key, callback));
                     }
                 };
@@ -124,9 +124,9 @@ var OneTask = (function() {
         })(),
         cookies = {
             /**
-             * 获取cookies中key为name的值
-             * @param {string} name key值
-             * @return {string} 返回对应值，如果没有则返回''
+             * get cookies
+             * @param {string} name key name
+             * @return {string} value, if not exist return ''
              */
             get: function(name) {
                 if (document.cookie.length > 0) {
@@ -143,25 +143,24 @@ var OneTask = (function() {
                 return '';
             },
             /**
-             * 设置cookies的值
-             * @param {string} name key值
-             * @param {string} val 值
-             * @param {object} expired 过期时间的date对象
-             * @param {string} path 路径对象
-             * @param {object} 对象本身
+             * set cookies
+             * @param {string} name key
+             * @param {string} val value
+             * @param {object} expired expired time (Date object)
+             * @param {string} path
              */
             set: function(name, val, expired, path) {
                 document.cookie = name + '=' + escape(val) + ((expired == null) ? '' : ';expires=' + expired.toGMTString()) + ';path=' + (path || '/');
                 return this;
             },
             /**
-             * 删除cookies
+             * remove cookies
              * @param {string} name
              * @param {string} path
              */
             remove: function(name, path) {
                 var exp = new Date();
-                exp.setTime(exp.getTime() - 1); // 设置过期时间
+                exp.setTime(exp.getTime() - 1); // set expired time
                 var val = this.get(name);
                 if (val != null) {
                     document.cookie = name + "=" + val + ";expires=" + exp.toGMTString() + ';path=' + (path || '/');
@@ -173,6 +172,9 @@ var OneTask = (function() {
         slice = ArrayProto.slice,
         nativeFilter = ArrayProto.filter,
         pageId = location.pathname + '?' + new Date().getTime() + Math.random(),
+        /*
+         * delegation of localStorage and cookie
+         */
         set = store.isSupport ? store.set : function(key, value) {
             cookies.set(key, JSON.stringify(value));
         },
@@ -183,6 +185,7 @@ var OneTask = (function() {
         remove = store.isSupport ? store.remove : function(key) {
             cookies.remove(key);
         },
+        // forEach
         each = function(array, iterator, context) {
             var value;
             if (array == null) {
@@ -205,6 +208,7 @@ var OneTask = (function() {
                 }
             }
         },
+        // filter
         filter = function(array, iterator, context) {
             var results = [];
             if (array == null) {
@@ -224,35 +228,32 @@ var OneTask = (function() {
         };
 
     /**
-     * 任务类
-     * @param {string} name 任务名
-     * @param {function} asyncJob 任务执行函数
-     *                       参数为syncReturn函数，将返回数据传给return，OneTask会帮你把数据同步发给其他页面。
-     *                       其他参数通过option.params传递
-     * @param {object} option 可选参数：
-     *                      params: 【数组/或单个参数】传给asyncJob的参数,尽可能少用params参数
-     *                      serverTimeout: 【数字】服务器的不在线
-     *                      interval: 【数字】任务的间隔执行时间，默认30秒
+     * Task class
+     * @param {string} name task name
+     * @param {function} asyncJob task function
+     * @param {object} option
+     *                      params: [array/object] params for asyncJob
+     *                      serverTimeout: [number] timeout of server, default: 2s
+     *                      interval: [number] interval of task function, default: 3s
      */
     function Task(name, asyncJob, option) {
-        this.name = 'T' + name; // 任务名，被用作key
-        this.serverTimeKey = this.name + 'T'; // 服务器时间的key
-        this.jobMsgKey = this.name + 'M'; // 任务消息的key
-        this.asyncJob = asyncJob; // 异步任务
-        this.jobMsg = null; // 任务信息，默认为null
-        // （因为任务切换时候get方法得到的为null）
-        this.isServer = false; // 是否是server
-        this.params = option && option.params; // 任务参数
-        this.serverTimeout = (option && option.serverTimeout) || 2000; // 服务器timeout
-        this.intervalTime = (option && option.interval) || 30000; // 任务执行间隔
-        this.timeUpdateInterval = 0; // server更新服务器时间的间隔 定时器句柄
-        this.jobRunInterval = 0; // 任务执行间隔 定时器句柄
-        this.serverCheckInterval = 0; // 检查服务器状态 定时器句柄
-        this.isRunning = false; // 是否正在运行
-        this.inited = false; // 
+        this.name = 'T' + name;                                         // key of task name
+        this.serverTimeKey = this.name + 'T';                           // key of server time
+        this.jobMsgKey = this.name + 'M';                               // key of task result(message)
+        this.asyncJob = asyncJob;
+        this.jobMsg = null;                                             // task result, default: null
+        this.isServer = false;
+        this.params = option && option.params;                          // parameters for task
+        this.serverTimeout = (option && option.serverTimeout) || 2000;
+        this.intervalTime = (option && option.interval) || 30000;
+        this.timeUpdateInterval = 0;                                    // interval to update server time
+        this.jobRunInterval = 0;                                        // interval to run task
+        this.serverCheckInterval = 0;                                   // interval to check server state
+        this.isRunning = false;
+        this.inited = false;
         var self = this;
-        // 设置callback 与定时器
-        function run() { // self.run函数的包装
+        // set callback
+        function run() {
             self._run();
         }
         self.callback = function(msg, isJSON) {
@@ -262,19 +263,18 @@ var OneTask = (function() {
     }
 
     /**
-     * 只有server会执行任务，其他页面上的callback会在run时得到任务结果
+     * only server can run the task
      */
     Task.prototype._run = function() {
         var self = this;
-        if (!self.isRunning) { // 没有运行则停止
+        if (!self.isRunning) {
             return this;
         }
         if (self.isServer) {
-            // 处理syncJob返回的data
+            // resolve the result of syncReturn method
             var syncReturnResolve = function (data) {
-                // 重新check，避免在执行过程中被抢占（即使被抢占了也没关系，过一段时间就会平稳）
+                // check again, make sure it is server
                 if (self.isServer) {
-                    // 执行到此处还是有可能被抢占，所以抢占成功后一定要清楚Msg
                     var msg = JSON.stringify(data);
                     set(self.jobMsgKey, msg);
                     if (self.jobMsg !== msg) {
@@ -283,25 +283,22 @@ var OneTask = (function() {
                     }
                     self.callback(data, true);
                 } else {
-                    // 从服务器获取信息
                     self.callback(self.jobMsg);
                 }
             };
             if (this.params) {
-                // concat会多生成数组，为了性能尽可能少用params参数
                 self.asyncJob.apply(self, [syncReturnResolve].concat(this.params));
             } else {
                 self.asyncJob.call(self, syncReturnResolve);
             }
         } else {
-            // 从服务器获取信息
             self.callback(self.jobMsg);
         }
         return this;
     };
 
     /**
-     * 开始任务
+     * start task
      */
     Task.prototype.start = function() {
         var self = this;
@@ -310,20 +307,19 @@ var OneTask = (function() {
         }
         self.isRunning = true;
 
-        // 抢占成为server
         self.switchToServer();
 
-        // 支持且未初始化时，绑定onStorage事件
+        // bind onStorage event
         if (store.isSupport && !self.inited) {
-            // 获取最新消息并存储
             store.onStorage(self.jobMsgKey, function(msg) {
+                // get result, store and fire callback
                 if (self.isRunning && self.jobMsg !== msg) {
                     self.jobMsg = msg;
                     self.fire('changeCallBack', JSON.parse(msg));
                 }
             });
         }
-        // 定时检查server是否宕机，以及cookies是否更新
+        // check server status
         self.serverCheckInterval = setInterval(function() {
             self.check();
             // document.title = ''
@@ -334,16 +330,16 @@ var OneTask = (function() {
             if (self.isServer) {
                 return;
             }
+            // server time maybe NaN, so default value is 0
             var serverTime = parseInt(get(self.serverTimeKey), 10) || 0,
-                // 可能返回为NaN
                 now = new Date().getTime();
-            // 如果没有设置服务器时间，或者是服务器超时了，则开始抢占
+            // if no server or server is down, then switch to server
             if (!serverTime || ((now - serverTime) > self.serverTimeout)) {
                 self.switchToServer();
             }
 
             if (!store.isSupport && self.isRunning) {
-                // 获取最新消息并存储
+                // get result, store and fire callback
                 var msg = get(self.jobMsgKey);
                 if (self.jobMsg !== msg) {
                     self.jobMsg = msg;
@@ -358,7 +354,7 @@ var OneTask = (function() {
     };
 
     /**
-     * 停止任务,注意由于异步任务的存在，无法立即停止任务
+     * stop task
      */
     Task.prototype.stop = function() {
         var self = this;
@@ -369,17 +365,16 @@ var OneTask = (function() {
     };
 
     /**
-     * 关闭任务，以后不再使用
+     * cancel task, can't start again
      */
     Task.prototype.cancel = function() {
-        // 清楚记录
-        // 但是有可能client切换成server之前被关闭，所以不能保证完全清除掉存储数据
+        // remove data but not sure it does
         if (this.isServer) {
             remove(this.name);
             remove(this.serverTimeKey);
             remove(this.jobMsgKey);
         }
-        // 清楚定时器
+        // clear interval
         clearInterval(this.timeUpdateInterval);
         clearTimeout(this.jobRunInterval);
         clearInterval(this.serverCheckInterval);
@@ -387,18 +382,18 @@ var OneTask = (function() {
     };
 
     /**
-     * 查询设置isServer的状态值
+     * check server status, and set isServer
      */
     Task.prototype.check = function(nowServer) {
         var self = this;
         nowServer = nowServer || get(self.name);
-        // 未设置
+        // no server
         if (!nowServer) {
             self.switchToServer();
-            // 不是自己
+        // server is not itself
         } else if (nowServer !== pageId) {
             self.isServer = false;
-            // 是自己
+        // is server
         } else {
             self.isServer = true;
         }
@@ -406,7 +401,8 @@ var OneTask = (function() {
     };
 
     /**
-     * 切换成为server，强制抢占
+     * switch to server
+     * must be success
      */
     Task.prototype.switchToServer = function() {
         var self = this;
@@ -417,10 +413,10 @@ var OneTask = (function() {
         set(self.name, pageId);
         set(self.serverTimeKey, new Date().getTime());
         self.timeUpdateInterval = setInterval(function() {
-            // 如果被别人抢占了
+            // if server was changed
             if (get(self.name) !== pageId) {
                 clearInterval(self.timeUpdateInterval);
-                // 更新时间
+            // update server time
             } else {
                 set(self.serverTimeKey, new Date().getTime());
             }
@@ -428,8 +424,9 @@ var OneTask = (function() {
         return this;
     };
 
-    /*
-     * 切换成为客户端
+    /**
+     * switch to client
+     * maybe not success
      */
     Task.prototype.switchToClient = function() {
         var self = this;
@@ -443,11 +440,12 @@ var OneTask = (function() {
         return this;
     };
 
-    // 是否使用cookie来传输数据，此时无法传大批量数据
+    // use cookie to store data or not
     Task.prototype.useCookie = !store.isSupport;
 
     /*
-     * 注册定时回调，此函数会在当前页面的任务运行而定时运行
+     * regist callback，which runs after the task
+     * parameter of callback is the result of task
      */
     Task.prototype.onChangeCallBack = function(callback) {
         this.on('changeCallBack', callback, this);
@@ -455,7 +453,8 @@ var OneTask = (function() {
     };
 
     /*
-     * 注册任务返回数据更新时候的回调函数，此函数不会随着任务结束而定时运行
+     * regist callback，which runs when the result change
+     * parameter of callback is the result of task
      */
     Task.prototype.onCallBack = function(callback) {
         this.on('callback', callback, this);
@@ -463,11 +462,11 @@ var OneTask = (function() {
     };
 
     /**
-     * 注册事件
-     * @param {string} name 事件名
-     * @param {function} callback 事件的回调函数
-     * @param {object} context 【可选】回调函数的this值
-     * @param {boolean} once 【可选】是否只执行一次
+     * regist event
+     * @param {string} name event name
+     * @param {function} callback
+     * @param {object} context
+     * @param {boolean} once only run once
      * @return {object} this
      */
     Task.prototype.on = function(name, callback, context, once) {
@@ -482,9 +481,9 @@ var OneTask = (function() {
     };
 
     /**
-     * 取消注册事件
+     * cancel registration
      * @param {string} name
-     * @param {function} callback 【可选】指定要取消的回调函数
+     * @param {function} callback
      * @return {object} this
      */
     Task.prototype.off = function(name, callback) {
@@ -506,9 +505,9 @@ var OneTask = (function() {
     };
 
     /**
-     * 激活事件
+     * fire event
      * @param {string} name
-     * @param {object} data 传递给事件回调函数的参数值
+     * @param {object} data event data
      * @return {object} this
      */
     Task.prototype.fire = function(name, data) {
