@@ -1,7 +1,7 @@
 One task for each browser
 ===========================
 
-OneTask is a simple javascript libary to make sure a timing task only execute in one page for each browser.
+OneTask is a simple javascript library to make sure a timing task only execute in one page for each browser.
 
 Example
 ---------------
