@@ -45,6 +45,7 @@
  *
  * @log 第一版实现
  */
+
 /*jshint undef:true, browser:true, noarg:true, curly:true, regexp:true, newcap:true, trailing:false, noempty:true, regexp:false, strict:true, evil:true, funcscope:true, iterator:true, loopfunc:true, multistr:true, boss:true, eqnull:true, eqeqeq:false, undef:true */
 /*global unescape:false, escape:false */
 
@@ -313,7 +314,7 @@ var OneTask = (function() {
         self.switchToServer();
 
         // 支持且未初始化时，绑定onStorage事件
-        /*if (store.isSupport && !self.inited) {
+        if (store.isSupport && !self.inited) {
             // 获取最新消息并存储
             store.onStorage(self.jobMsgKey, function(msg) {
                 if (self.isRunning && self.jobMsg !== msg) {
@@ -321,7 +322,7 @@ var OneTask = (function() {
                     self.fire('changeCallBack', JSON.parse(msg));
                 }
             });
-        }*/
+        }
         // 定时检查server是否宕机，以及cookies是否更新
         self.serverCheckInterval = setInterval(function() {
             self.check();
@@ -341,7 +342,7 @@ var OneTask = (function() {
                 self.switchToServer();
             }
 
-            if (/*!store.isSupport &&*/ self.isRunning) {
+            if (!store.isSupport && self.isRunning) {
                 // 获取最新消息并存储
                 var msg = get(self.jobMsgKey);
                 if (self.jobMsg !== msg) {
