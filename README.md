@@ -50,3 +50,9 @@ API
     });
 
     NOTE: if the result of task is null, it means task is not ready. It's not a right result, don't use it;
+
+
+#License
+MIT. Be pleasure to fork and modify it.
+
+
